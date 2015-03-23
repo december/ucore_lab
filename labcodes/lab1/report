@@ -1,8 +1,7 @@
 练习一：
-1、操作系统镜像文件ucore.img是如何一步步生成的？(需要比较详细地解释Makefile中每一条相关命令和参数的含义，以及说明导致结果 )
-答：通过make -n将make的过程打印出来，具体解释如下。（注释以空行隔开）
+1、操作系统镜像文件ucore.img是如何一步步生成的？(需要比较详细地解释Makefile中每一条相关命令和参数的含义，以及说明导致结果)
+答：用make -n命令将make的过程打印出来，可以看到ucore.img在生成中经历的主要步骤。将整个过程粘贴在下面，并分段解释如下：
 echo + cc kern/init/init.c
-##echo表示输出后面的内容
 
 gcc -Ikern/init/ -fno-builtin -Wall -ggdb -m32 -gstabs -nostdinc  -fno-stack-protector -Ilibs/ -Ikern/debug/ -Ikern/driver/ -Ikern/trap/ -Ikern/mm/ -c kern/init/init.c -o obj/kern/init/init.o
 echo + cc kern/libs/readline.c
@@ -35,27 +34,18 @@ echo + cc libs/printfmt.c
 gcc -Ilibs/ -fno-builtin -Wall -ggdb -m32 -gstabs -nostdinc  -fno-stack-protector -Ilibs/  -c libs/printfmt.c -o obj/libs/printfmt.o
 echo + cc libs/string.c
 gcc -Ilibs/ -fno-builtin -Wall -ggdb -m32 -gstabs -nostdinc  -fno-stack-protector -Ilibs/  -c libs/string.c -o obj/libs/string.o
-##这一部分的所有操作是为了编译kern文件夹的各种后缀名为.o、.c、.S的文件，供后面连接使用。其中，这些命令中的各个参数作用如下：
-##gcc：编译器 
-##-fno-builtin 禁用gcc的built
-##-fno-stack-protector 不产生多余的代码来检查栈溢出。
-##-Wall 打开所有警告
-##-ggdb 添加公共gdb调试信息
-##-m32 产生32位代码。
-##-c 指定源文件名
-##-o 指定目标文件名
-##-nostdinc 不检查系统默认的目录以获取头文件。
+##这一部分是在编译kern文件夹中后缀名为.o、.c、.S的文件，供后面进行链接。其中，-fno-builtin命令禁用gcc的built，-fno-stack-protector命令取消使用多余的代码来检查栈溢出，-Wall命令打开所有警告，-ggdb命令添加公共gdb调试信息，-m32命令表示产生32位代码，-c指定源文件名，-o指定目标文件名，-nostdinc表示不检查系统默认的目录以获取头文件。
 
 mkdir -p bin
 ##在当前目录创建bin文件夹
 
 echo + ld bin/kernel
 ld -m    elf_i386 -nostdlib -T tools/kernel.ld -o bin/kernel  obj/kern/init/init.o obj/kern/libs/readline.o obj/kern/libs/stdio.o obj/kern/debug/kdebug.o obj/kern/debug/kmonitor.o obj/kern/debug/panic.o obj/kern/driver/clock.o obj/kern/driver/console.o obj/kern/driver/intr.o obj/kern/driver/picirq.o obj/kern/trap/trap.o obj/kern/trap/trapentry.o obj/kern/trap/vectors.o obj/kern/mm/pmm.o  obj/libs/printfmt.o obj/libs/string.o
-##连接obj/kern中所有.o文件
+##连接obj/kern中所有的.o文件
 
 objdump -S bin/kernel > obj/kernel.asm
 objdump -t bin/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > obj/kernel.sym
-##objdump：进行反汇编，生成kernel.asm和kernel.sym
+##使用objdump进行反汇编，生成kernel.asm和kernel.sym
 
 echo + cc boot/bootasm.S
 gcc -Iboot/ -fno-builtin -Wall -ggdb -m32 -gstabs -nostdinc  -fno-stack-protector -Ilibs/ -Os -nostdinc -c boot/bootasm.S -o obj/boot/bootasm.o
@@ -70,13 +60,13 @@ gcc -g -Wall -O2 obj/sign/tools/sign.o -o bin/sign
 
 echo + ld bin/bootblock
 ld -m    elf_i386 -nostdlib -N -e start -Ttext 0x7C00 obj/boot/bootasm.o obj/boot/bootmain.o -o obj/bootblock.o
-##链接obj中的.o文件，生成目标为bin/bootblock.O
+##链接obj中的.o文件，生成目标为bin/bootblock.o文件
 
 objdump -S obj/bootblock.o > obj/bootblock.asm
-##将bootblock.o反汇编生成bootblock.asm
+##反汇编bootblock.o生成bootblock.asm文件
 
 objcopy -S -O binary obj/bootblock.o obj/bootblock.out
-##将bootblock.o通过objcopy变成bootblock.out
+##使用objcopy命令由bootblock.o生成bootblock.out文件
 
 bin/sign obj/bootblock.out bin/bootblock
 dd if=/dev/zero of=bin/ucore.img count=10000
@@ -85,14 +75,18 @@ dd if=bin/kernel of=bin/ucore.img seek=1 conv=notrunc
 wulingling@ubuntu:~/ucore_lab/labcodes/lab1$ 
 
 2、一个系统被认为是符合规范的硬盘主引导扇区的特征是什么？
-答：规范的主引导扇区的特征是，大小为512字节，最后两个字节（从0记数，第510，511字节）分别为0x55 0xAA。前446个字节为MBR，再64字节DPT，记录硬盘的分区以及分区属性。
+大小为512字节，最后两个字节分别为0x55 0xAA。前446个字节为MBR，后跟64字节DPT，记录硬盘分区和分区属性。
 
 练习二：
-1、在gdbinit中写入define hook-stop x/i $pc end 设置反汇编。删除gdbinit最后的continue，这样qemu启动后会停在加电第一条指令。执行make debug,会自动编译ucore.img，并启动qemu和gdb。qemu加电后在第一条指令暂停。在gdb命令行中执行ni,可单步并显示汇编代码。但是gdb默认情况下反汇编指令地址是错的，需要手动计算正确的地址进行反汇编。方法
-(gdb) set arch i8086
-(gdb) x/i 0xffff0
-   0xffff0:	ljmp   $0xf000,$0xe05b
-即加电后第一条指令是长跳转。
+为了熟悉使用qemu和gdb进行的调试工作，我们进行如下的小练习：
+
+1、从CPU加电后执行的第一条指令开始，单步跟踪BIOS的执行。
+2、在初始化位置0x7c00设置实地址断点,测试断点正常。
+3、从0x7c00开始跟踪代码运行,将单步跟踪反汇编得到的代码与bootasm.S和 bootblock.asm进行比较。
+4、自己找一个bootloader或内核中的代码位置，设置断点并进行测试。
+
+
+1、在gdbinit中写入define hook-stop x/i $pc end 设置反汇编。删除gdbinit最后的continue，这样qemu启动后会停在加电第一条指令。执行make debug,会自动编译ucore.img，并启动qemu和gdb。qemu加电后在第一条指令暂停。在gdb命令行中执行ni,可单步并显示汇编代码。
 
 2、输入b *0x7c00设置断点。再输入c继续执行。
 屏幕显示=> 0x7C00: cli，说明已到断点处并暂停，断点正常。
@@ -119,8 +113,8 @@ wulingling@ubuntu:~/ucore_lab/labcodes/lab1$
    0x7c20:	out    %al,$0x60
    0x7c22:	lgdtl  (%esi)
    0x7c25:	jo     0x7ca3
-代码和bootasm.S、bootblock.asm是相同的，只是由于反汇编的原因，代码格式上略有差别。
-4、通过在bootmain函数设置断点（通过在obj文件夹中找到bootmain对应的物理地址为0x7d11），设置代码进行测试，具体gdb的内容显示如下：
+代码和bootasm.S、bootblock.asm是相同的，只是代码格式上略有差别。
+4、在obj文件夹中找到bootmain对应的物理地址为0x7d11，设置断点进行测试，具体结果显示如下：
 (gdb) b *0x7d11
 Breakpoint 1 at 0x7d11
 (gdb) continue
@@ -144,38 +138,28 @@ qemu中显示此时运行到的汇编代码：
 
 
 
-练习三：分析bootloader是如何完成从实模式进入保护模式的？
-1、在开机后，BIOS将硬盘第一个扇区中的代码载入到物理地址0x7c00的位置，然后开始运行。
-2、cli关中断，cld清除方向标志，设置串操作时di,si正向增长。
-3、设置段寄存器，将%ds,%es,%ss均置为0
-4、开启A20 Gate，使得内存不再绕回。
-5、打开保护模式：载入全局描述符表gdtdesc，将CR0最后一位置1
-6、用ljmp将段选择子$PROT_MODE_CSEG(0x8)，代码偏移$protcseg载入cs,eip,执行下一条指令代码，进入32位保护模式
-7、进入保护模式之后，将数据段选择子载入各个段寄存器。在调用C函数之前，设置栈寄存器%esp（代码开头），帧寄存器%ebp（0）。调用bootmain加载elf。若返回，则进行循环。
+练习三：
+1、分析bootloader进入保护模式的过程
+a.开机后，BIOS将硬盘第一个扇区中的代码载入到物理地址0x7c00的位置，开始运行代码。
+b.清理环境，cli关中断，清除方向标志，设置段寄存器，将flag和段寄存器置0。
+c.开启A20 Gate，使得全部地址线可用。
+d.载入全局描述符表gdtdesc，将CR0的PE位置1，开启保护模式。
+f.用ljmp进行长跳转，将段选择子和代码偏移载入cs、eip。
+g.将数据段选择子载入各个段寄存器。在调用C函数之前，设置栈寄存器和帧寄存器，建立堆栈。
+h.已进入保护模式，调用bootmain加载elf。若
 
 
-练习四：
-1、bootloader如何读取硬盘扇区的？
-答：bootloader是通过readsect()函数进行硬盘扇区的读写的，具体步骤如下：
-	A、等待磁盘准备waitdisk()，当0x1F7不为忙状态的时候开始下一步。
-	B、通过将0x1F2改写成1，指定要读写的扇区数为1。
-	C、将0x1F3、0x1F4、0x1F5的八位以及0x1F6的低四位改写成LBA参数的0到27位，再将0x1F6的第四位设为0，表示由主盘读入，第五六七位设为1，将模式设为LBA模式。
-	D、设置0x1F7为0x20。
-	E、再次等待磁盘准备waitdisk()，即0x1F7不为忙状态时继续下一步。
-	F、通过insl命令读入一个扇区，在这里是将其每次读入的数据量设置成了128个32位的数据。由于insl是4字节一组，所以从0x1F0端口读取SECTSIZE/4个Word到dst。		
-2、bootloader是如何加载ELF格式的OS？
-答：A、从硬盘中读入指针0x10000的内容，
-    B、检查指针指向的e_magic是否等于ELF_MAGIC，如果不等于则将进入死循环。
-    C、载入其中的各个程序段。
+练习四：		
+1、分析bootloader加载ELF格式的OS的过程。
+a.读取ELF的头部，通过储存在头部的幻数判断ELF文件是否合法。
+b.按照ELF文件头的描述表，调用readseg函数，将从1扇区开始的ELF文件载入内存的对应位置。
+c.根据ELF头部储存的入口信息，找到内核的入口。
 
 练习五：
-1、实现过程：
-先用read_ebp(),read_eip()两个函数获取当前ebp,eip的位置。在ebp=0且计数器没有达到STACKFRAME_DEPTH之前，输出当前ebp与eip的值。
-根据C栈帧规则，uint32_t* args=((uint32_t*)ebp + 2)是第一个参数的首地址。于是args[0]...args[3]可获得4个参数
-弹栈获取上级栈帧：返回地址为[ebp+4],作为新的eip,ebp更新为[ebp]。
-循环，直到达到STACKFRAME_DEPTH，就可输出当前堆栈中的所有栈帧
+1、实现函数调用堆栈跟踪函数。
+先用read_ebp()、read_eip()两个函数获取当前ebp、eip的位置。在ebp=0且计数器没有达到STACKFRAME_DEPTH之前，输出当前的ebp与eip。根据栈帧规则，uint32_t* args=((uint32_t*)ebp + 2)是第一个参数的首地址。按照这种方法，弹栈获取上级栈帧，返回地址[ebp+4]作为新的eip，ebp则更新为[ebp]，循环直到达到STACKFRAME_DEPTH，即可输出当前堆栈中的所有栈帧。
 
-输出如下：
+程序运行结果如下：
 ebp:0x00007b28 eip:0x001009c6 args:0x00010094 0x00010094 0x00007b58 0x00100094
     kern/debug/kdebug.c:306: print_stackframe+22
 ebp:0x00007b38 eip:0x00100cab args:0x00000000 0x00000000 0x00000000 0x00007ba8
@@ -217,24 +201,16 @@ ebp:0x00000000 eip:0x00000000 args:0xf000e2c3 0xf000ff53 0xf000ff53 0xf000ff53
 ebp:0xf000ff53 eip:0xf000ff53 args:0x00000000 0x00000000 0x00000000 0x00000000
     <unknow>: -- 0xf000ff52 --
 
-最后一行含义： 
-ebp:0x00007bf8  当前栈指针指向地址0x00007bf8，是上层函数的地址。
-eip:0x00007d73	当前所在函数的地址。
-args:0xc031fcfa 0xc08ed88e 0x64e4d08e 0xfa7502a8 调用这个函数时传入的所有参数的地址
-<unknow>: -- 0x00007d72 -- 指针指向的地址0x00007d72不是函数地址。
-
 
 练习六：
 1、中断向量表一个项占多少字节？其哪几位代表中断处理码的入口？
-答：中断向量表一个项共8个字节。入口：31-16位是段选择器，63-48位是段内偏移的高16位，15-0位是段内偏移的低16位。
+答：中断向量表一个项共8个字节，其中入口包括16－31位的段选择子、48-63位的段内偏移高16位，0－15位的段内偏移低16位。
 
-2、完善kern/trap/trap.c中的idt_init
-
+2、请编程完善kern/trap/trap.c中对中断向量表进行初始化的函数idt_init。
 首先声明引用变量，然后通过调用mmu.h中的SETGATE函数进行初始化。在这里参照了lab1ppt中的代码，首先是将idt向量中的所有项都关联到__vectors的对应项上，设置特权级，对于T_SYSCALL再进行单独处理。最后调用x86.h中的lidt函数嵌入lidt汇编代码。
 
-3、完善trap.c中的trap
-首先要对时钟中断进行计数，使用全局变量ticks，初始为0。
-当trap发生时，若tr_trapno等于IRQ_OFFSET+IRQ_TIMER,则是时钟中断，计数器加1。若计数器模TICK_NUM为0，则调用print_ticks()输出。
+3、请编程完善trap.c中的中断处理函数trap，在对时钟中断进行处理的部分填写trap函数。
+首先要对时钟中断进行计数，使用全局变量ticks，初始为0。当trap发生时，若tr_trapno等于IRQ_OFFSET+IRQ_TIMER,则是时钟中断，计数器加1。若计数器模TICK_NUM为0，则调用print_ticks()输出。
 
 
 
