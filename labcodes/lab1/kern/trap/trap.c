@@ -140,6 +140,8 @@ print_regs(struct pushregs *regs) {
     cprintf("  eax  0x%08x\n", regs->reg_eax);
 }
 
+struct trapframe k2u, u2k;
+
 /* trap_dispatch - dispatch based on what type of trap occurred */
 static void
 trap_dispatch(struct trapframe *tf) {
@@ -170,8 +172,27 @@ trap_dispatch(struct trapframe *tf) {
         break;
     //LAB1 CHALLENGE 1 : YOUR CODE you should modify below codes.
     case T_SWITCH_TOU:
+        if (tf->tf_cs != USER_CS)
+        {
+            k2u = *tf;
+            k2u.tf_cs = USER_CS;
+            k2u.tf_ds = k2u.tf_es = k2u.tf_ss = USER_DS;
+            k2u.tf_esp = (uint32_t)tf + sizeof(struct trapframe) - 8;
+            k2u.tf_eflags |= FL_IOPL_MASK;
+            *((uint32_t *)tf - 1) = (uint32_t)&k2u;
+        }
+        break;
     case T_SWITCH_TOK:
-        panic("T_SWITCH_** ??\n");
+        if (tf->tf_cs != KERNEL_CS)
+        {
+            tf->tf_cs = KERNEL_CS;
+            tf->tf_ds = tf->tf_es = KERNEL_DS;
+            tf->tf_eflags = tf->tf_eflags & ~FL_IOPL_MASK;
+            u2k = *((struct trapframe*)(tf->tf_esp - (sizeof(struct trapframe) - 8)));
+            memmove(&u2k, tf, sizeof(struct trapframe) - 8);
+            *((uint32_t *)tf - 1) = (uint32_t)&u2k;
+        }
+        //panic("T_SWITCH_** ??\n");
         break;
     case IRQ_OFFSET + IRQ_IDE1:
     case IRQ_OFFSET + IRQ_IDE2:
