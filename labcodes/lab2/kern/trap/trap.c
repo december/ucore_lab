@@ -141,6 +141,8 @@ print_regs(struct pushregs *regs) {
 }
 
 /* trap_dispatch - dispatch based on what type of trap occurred */
+struct trapframe k2u, u2k;
+
 static void
 trap_dispatch(struct trapframe *tf) {
     char c;
