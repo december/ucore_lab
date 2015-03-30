@@ -2,7 +2,10 @@
 ---
 
 1、操作系统镜像文件ucore.img是如何一步步生成的？(需要比较详细地解释Makefile中每一条相关命令和参数的含义，以及说明导致结果)
+
 答：用make -n命令将make的过程打印出来，可以看到ucore.img在生成中经历的主要步骤。将整个过程粘贴在下面，并分段解释如下：
+
+```
 echo + cc kern/init/init.c
 
 gcc -Ikern/init/ -fno-builtin -Wall -ggdb -m32 -gstabs -nostdinc  -fno-stack-protector -Ilibs/ -Ikern/debug/ -Ikern/driver/ -Ikern/trap/ -Ikern/mm/ -c kern/init/init.c -o obj/kern/init/init.o
@@ -83,6 +86,7 @@ bin/sign obj/bootblock.out bin/bootblock
 dd if=/dev/zero of=bin/ucore.img count=10000
 dd if=bin/bootblock of=bin/ucore.img conv=notrunc
 dd if=bin/kernel of=bin/ucore.img seek=1 conv=notrunc
+```
 
 2、一个系统被认为是符合规范的硬盘主引导扇区的特征是什么？
 
@@ -199,7 +203,7 @@ c.根据ELF头部储存的入口信息，找到内核的入口。
 先用read_ebp()、read_eip()两个函数获取当前ebp、eip的位置。在ebp=0且计数器没有达到STACKFRAME_DEPTH之前，输出当前的ebp与eip。根据栈帧规则，uint32_t* args=((uint32_t*)ebp + 2)是第一个参数的首地址。按照这种方法，弹栈获取上级栈帧，返回地址[ebp+4]作为新的eip，ebp则更新为[ebp]，循环直到达到STACKFRAME_DEPTH，即可输出当前堆栈中的所有栈帧。
 
 程序运行结果如下：
-
+```
 ebp:0x00007b28 eip:0x001009c6 args:0x00010094 0x00010094 0x00007b58 0x00100094
     kern/debug/kdebug.c:306: print_stackframe+22
 ebp:0x00007b38 eip:0x00100cab args:0x00000000 0x00000000 0x00000000 0x00007ba8
@@ -240,6 +244,7 @@ ebp:0x00000000 eip:0x00000000 args:0xf000e2c3 0xf000ff53 0xf000ff53 0xf000ff53
     <unknow>: -- 0xffffffff --
 ebp:0xf000ff53 eip:0xf000ff53 args:0x00000000 0x00000000 0x00000000 0x00000000
     <unknow>: -- 0xf000ff52 --
+```
 
 ---
 ### 练习六
@@ -262,6 +267,22 @@ ebp:0xf000ff53 eip:0xf000ff53 args:0x00000000 0x00000000 0x00000000 0x00000000
 ---
 
 独立进行尝试实现用户态与内核态切换时失败了，总是出现栈溢出等错误。阅读答案中的说明后有了更多的了解，发现并不是像我之前想的那样，先实现内核态切换用户态，然后把这一过程逆过来即可实现用户态切换内核态。�由于特权级不同，在切换到用户态后，需要手动添加cs和ebp，才能返回到正确的位置。
+
+---
+### Others
+---
+
+1、与答案的异同
+
+由于几段代码都太过简单，且每段只有几行，因此跟答案没有根本区别，最大的区别可能是判定时钟中断的方式不同。我采用了超过100则清零的方式，而答案中采用取模的方式。
+
+2、涉及的知识点
+
+中断、系统调用、bootloader、内核态和用户态及其切换。
+
+3、实验中未涉及的知识点
+
+中断处理，以及更多类型的系统调用。
 
 
 
