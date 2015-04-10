@@ -360,7 +360,7 @@ pmm_init(void) {
 // return vaule: the kernel virtual address of this pte
 pte_t *
 get_pte(pde_t *pgdir, uintptr_t la, bool create) {
-    /* LAB2 EXERCISE 2: YOUR CODE
+    /* LAB2 EXERCISE 2: 2012011359
      *
      * If you need to visit a physical address, please use KADDR()
      * please read pmm.h for useful macros
@@ -393,6 +393,24 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
     }
     return NULL;          // (8) return page table entry
 #endif
+#if 1
+	uintptr_t pdx = PDX(la);
+    pde_t* pdep = &pgdir[pdx];   // (1) find page directory entry
+    if (!(*pdep & PTE_P)) {              // (2) check if entry is not present
+		if (!create)
+			return NULL;
+		struct Page *page = alloc_page();  //(3) check if creating is needed, then alloc page for page table
+        if (page) {
+			set_page_ref(page,1); // (4) set page reference
+			uintptr_t pa = page2pa(page); // (5) get linear address of page
+			memset(KADDR(pa),0,PGSIZE); // (6) clear page content using memset
+			*pdep = (pa | PTE_U | PTE_W | PTE_P); // (7) set page directory entry's permission
+		} else
+		return page;
+    }
+    return (uintptr_t*)KADDR(PTE_ADDR(*pdep)) + PTX(la);// (8) return page table entry
+	//后十二位置零，转换成kernel虚址二级页表基址，加上offset，返回找到二级页表项的地址
+#endif
 }
 
 //get_page - get related Page struct for linear address la using PDT pgdir
@@ -413,7 +431,7 @@ get_page(pde_t *pgdir, uintptr_t la, pte_t **ptep_store) {
 //note: PT is changed, so the TLB need to be invalidate 
 static inline void
 page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
-    /* LAB2 EXERCISE 3: YOUR CODE
+    /* LAB2 EXERCISE 3: 2012011359
      *
      * Please check if ptep is valid, and tlb must be manually updated if mapping is updated
      *
@@ -436,6 +454,16 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
                                   //(4) and free this page when page reference reachs 0
                                   //(5) clear second page table entry
                                   //(6) flush tlb
+    }
+#endif
+#if 1
+    if (*ptep & PTE_P) {                      //(1) check if page directory is present
+        struct Page *page = pte2page(*ptep); //(2) find corresponding page to pte
+		page_ref_dec(page); //(3) decrease page reference
+        if (!page->ref)
+			free_page(page); //(4) and free this page when page reference reachs 0
+        *ptep = 0;//(5) clear second page table entry
+        tlb_invalidate(pgdir,la);//(6) flush tlb
     }
 #endif
 }
