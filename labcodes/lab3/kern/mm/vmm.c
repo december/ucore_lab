@@ -397,7 +397,7 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
    }
 #endif
 #if 1
-    /*LAB3 EXERCISE 1: 2011011359*/
+    /*LAB3 EXERCISE 1: 2012011359*/
     ptep = get_pte(mm->pgdir,addr,1);
 	if (ptep == NULL)
 		goto failed;
@@ -409,7 +409,7 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
 
     }
     else {
-		/*LAB3 EXERCISE 2: 2011011359
+		/*LAB3 EXERCISE 2: 2012011359
 		* Now we think this pte is a  swap entry, we should load data from disk to a page with phy addr,
 		* and map the phy addr with logical addr, trigger swap manager to record the access situation of this page.
 		*
