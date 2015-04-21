@@ -209,6 +209,7 @@ get_pid(void) {
 // NOTE: before call switch_to, should load  base addr of "proc"'s new PDT
 void
 proc_run(struct proc_struct *proc) {
+    cprintf("Switch to process %d\n", proc->pid);
     if (proc != current) {
         bool intr_flag;
         struct proc_struct *prev = current, *next = proc;
@@ -453,6 +454,7 @@ bad_fork_cleanup_proc:
 //   3. call scheduler to switch to other process
 int
 do_exit(int error_code) {
+    cprintf("Process %d exits!\n", current->pid);
     if (current == idleproc) {
         panic("idleproc exit.\n");
     }
@@ -510,6 +512,7 @@ do_exit(int error_code) {
  */
 static int
 load_icode(unsigned char *binary, size_t size) {
+    cprintf("Process %d loading icode\n", current->pid);
     if (current->mm != NULL) {
         panic("load_icode: current->mm must be empty.\n");
     }
@@ -659,6 +662,7 @@ bad_mm:
 //           - call load_icode to setup new memory space accroding binary prog.
 int
 do_execve(const char *name, size_t len, unsigned char *binary, size_t size) {
+    cprintf("Process %d executing!\n", current->pid);
     struct mm_struct *mm = current->mm;
     if (!user_mem_check(mm, (uintptr_t)name, len, 0)) {
         return -E_INVAL;
@@ -695,6 +699,7 @@ execve_exit:
 // do_yield - ask the scheduler to reschedule
 int
 do_yield(void) {
+    cprintf("Process %d doing yield\n", current->pid);
     current->need_resched = 1;
     return 0;
 }
@@ -704,6 +709,7 @@ do_yield(void) {
 // NOTE: only after do_wait function, all resources of the child proces are free.
 int
 do_wait(int pid, int *code_store) {
+    cprintf("Process %d change to wait\n", pid);
     struct mm_struct *mm = current->mm;
     if (code_store != NULL) {
         if (!user_mem_check(mm, (uintptr_t)code_store, sizeof(int), 1)) {
@@ -814,6 +820,7 @@ kernel_execve(const char *name, unsigned char *binary, size_t size) {
 // user_main - kernel thread used to exec a user program
 static int
 user_main(void *arg) {
+    cprintf("Process begins!\n");
 #ifdef TEST
     KERNEL_EXECVE2(TEST, TESTSTART, TESTSIZE);
 #else
