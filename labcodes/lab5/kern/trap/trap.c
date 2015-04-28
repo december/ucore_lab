@@ -41,7 +41,7 @@ static struct pseudodesc idt_pd = {
 /* idt_init - initialize IDT to each of the entry points in kern/trap/vectors.S */
 void
 idt_init(void) {
-     /* LAB1 YOUR CODE : STEP 2 */
+     /* LAB1 2012011359 : STEP 2 */
      /* (1) Where are the entry addrs of each Interrupt Service Routine (ISR)?
       *     All ISR's entry addrs are stored in __vectors. where is uintptr_t __vectors[] ?
       *     __vectors[] is in kern/trap/vector.S which is produced by tools/vector.c
@@ -53,7 +53,13 @@ idt_init(void) {
       *     You don't know the meaning of this instruction? just google it! and check the libs/x86.h to know more.
       *     Notice: the argument of lidt is idt_pd. try to find it!
       */
-     /* LAB5 YOUR CODE */ 
+	extern uintptr_t __vectors[];
+	int i;
+    for (i = 0;i < sizeof(idt) / sizeof(struct gatedesc);i++)
+        SETGATE(idt[i], 0, GD_KTEXT, __vectors[i], DPL_KERNEL);
+	SETGATE(idt[T_SYSCALL],1,GD_KTEXT,__vectors[T_SYSCALL],DPL_USER);
+    lidt(&idt_pd);
+     /* LAB5 2012011359 */
      //you should update your lab1 code (just add ONE or TWO lines of code), let user app to use syscall to get the service of ucore
      //so you should setup the syscall interrupt gate in here
 }
@@ -182,6 +188,8 @@ pgfault_handler(struct trapframe *tf) {
 static volatile int in_swap_tick_event = 0;
 extern struct mm_struct *check_mm_struct;
 
+struct trapframe k2u, u2k;
+
 static void
 trap_dispatch(struct trapframe *tf) {
     char c;
@@ -213,13 +221,21 @@ trap_dispatch(struct trapframe *tf) {
     LAB3 : If some page replacement algorithm(such as CLOCK PRA) need tick to change the priority of pages,
     then you can add code here. 
 #endif
-        /* LAB1 YOUR CODE : STEP 3 */
-        /* handle the timer interrupt */
-        /* (1) After a timer interrupt, you should record this event using a global variable (increase it), such as ticks in kern/driver/clock.c
-         * (2) Every TICK_NUM cycle, you can print some info using a funciton, such as print_ticks().
-         * (3) Too Simple? Yes, I think so!
-         */
-        /* LAB5 YOUR CODE */
+    	/* LAB1 2012011359 : STEP 3 */
+    	/* handle the timer interrupt */
+    	/* (1) After a timer interrupt, you should record this event using a global variable (increase it), such as ticks in kern/driver/clock.c
+    	 * (2) Every TICK_NUM cycle, you can print some info using a funciton, such as print_ticks().
+    	 * (3) Too Simple? Yes, I think so!
+    	 */
+		ticks++;
+		if (ticks >= TICK_NUM)
+		{
+			if (current != NULL)
+			   current->need_resched = 1;
+			ticks = 0;
+			//print_ticks();
+		}
+        /* LAB5 2012011359 */
         /* you should upate you lab1 code (just add ONE or TWO lines of code):
          *    Every TICK_NUM cycle, you should set current process's current->need_resched = 1
          */
@@ -233,10 +249,29 @@ trap_dispatch(struct trapframe *tf) {
         c = cons_getc();
         cprintf("kbd [%03d] %c\n", c, c);
         break;
-    //LAB1 CHALLENGE 1 : YOUR CODE you should modify below codes.
+    //LAB1 CHALLENGE 1 : 2012011359 you should modify below codes.
     case T_SWITCH_TOU:
+        if (tf->tf_cs != USER_CS)
+        {
+            k2u = *tf;
+            k2u.tf_cs = USER_CS;
+            k2u.tf_ds = k2u.tf_es = k2u.tf_ss = USER_DS;
+            k2u.tf_esp = (uint32_t)tf + sizeof(struct trapframe) - 8;
+            k2u.tf_eflags |= FL_IOPL_MASK;
+            *((uint32_t *)tf - 1) = (uint32_t)&k2u;
+        }
+        break;
     case T_SWITCH_TOK:
-        panic("T_SWITCH_** ??\n");
+        if (tf->tf_cs != KERNEL_CS)
+        {
+            tf->tf_cs = KERNEL_CS;
+            tf->tf_ds = tf->tf_es = KERNEL_DS;
+            tf->tf_eflags = tf->tf_eflags & ~FL_IOPL_MASK;
+            u2k = *((struct trapframe*)(tf->tf_esp - (sizeof(struct trapframe) - 8)));
+            memmove(&u2k, tf, sizeof(struct trapframe) - 8);
+            *((uint32_t *)tf - 1) = (uint32_t)&u2k;
+         }
+        //panic("T_SWITCH_** ??\n");
         break;
     case IRQ_OFFSET + IRQ_IDE1:
     case IRQ_OFFSET + IRQ_IDE2:
