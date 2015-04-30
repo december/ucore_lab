@@ -1,58 +1,52 @@
 ### 练习一
 ---
 
-1、分配并初始化一个进程控制块
+1、加载应用程序并执行
 
-只需要在alloc_proc函数中把proc_struct结构的所有成员变量进行初始化，初始化的值按照实验指导书上的确定。state设置为PROC_UNINIT，pid设置为-1，其余数值设置为0，指针设置为NULL。
+按照实验中的提示设置tf的成员变量，其中cs为用户代码段设为USER_CS，ds、es、ss为用户数据段设为USER_DS，esp为栈顶，eip为程序入口，eflags为中断使能标志。
 
-2、请说明proc_struct中struct context context和struct trapframe *tf成员变量含义和在本实验中的作用是啥？
+2、描述当创建一个用户态进程并加载了应用程序后，CPU是如何让这个应用程序最终在用户态执行起来的。即这个用户态进程被ucore选择占用CPU执行（RUNNING态）到具体执行应用程序第一条指令的整个经过。
 
-context保存当前进程的上下文，从proc.h中context结构的成员变量即可看出，该结构通过保存eip、esp、ebx、ecx、edx、esi、edi、ebp等寄存器的值来保存当前进程的运行状态。当需要进程切换时，通过恢复该结构中保存的寄存器的值来切换到新进程。
-
-trapframe保存发生中断时进程的上下文，即进程中断时对应的中断帧。当需要创建进程时，设置好相应信息后将运行环境切换到trapframe中，再切换到kernel_thread_entry中完成创建。
+当一个用户态进程进入RUNNING态后，首先加载新线程的段和CR3，然后调用switch_to函数，保存上下文，将存储相应信息设置为用户态的tf作为参数调用fortret函数，将栈空间切换到新线程的内核栈，加载存储在寄存器中的参数。当所有中断和系统调用返回后，开始执行第一条指令。
 
 ---
 ### 练习二
 ---
 
-1、为新创建的内核线程分配资源
+1、父进程复制自己的内存空间给子进程
 
-按照注释中的提示，首先调用alloc_proc获得一块空间，然后为进程分配栈空间，复制父进程的栈数据和上下文到子进程，将子进程添加到进程链表，将状态设置为唤醒状态，最后返回进程号。
+按照注释中的提示，首先利用KADDR找到src、dst地址所对应内容，再利用memset完成复制，最后用page_insert来修改页表的对应映射关系，即可复制父进程的内存空间到子进程。
 
-2、请说明ucore是否做到给每个新fork的线程一个唯一的id？请说明你的分析和理由。 
+2、简要说明如何设计实现”Copy on Write 机制“，给出概要设计，鼓励给出详细设计。
 
-是，通过get_pid()函数为每个进程分配一个唯一的pid。当新进程创建需要分配id时，get_pid()函数首先将上一个分配出去的id加1得到新id，若该id超过max限制则置为1。然后遍历所有线程组成的链表，寻找next_safe（比上个分配出去的id大的最小id）并将其与新id比较，若next_safe大于新id，则说明新id未被占用可以分配，直接分配之；否则将新id加1，重复上述过程，直到找到一个合法的id。因此，这样分配出去的所有id都是唯一的。
+COW机制要求在生成新进程时，新进程与原进程会共享同一内存区；只有当其中一进程进行写操作时，系统才会为其另外分配内存页面并完成其余不变部分的复制。在ucore中，复制mm_struct的工作在dup_mmap中完成。若要实现COW机制，需修改dup_mmap，将复制mm_struct改为直接传vma的指针，相当于使两个mm_struct共享原来的内存空间，并将该vma设为只读。 当出现page_fault的时候，如果发现错误原因是在尝试写一个只读页，则说明这里有共用这块空间的进程尝试进行了写操作，这时再新建vma并复制原来的mm_struct，并将原来vma的只读取消，即实现了COW机制。
 
 ---
 ### 练习三
 ---
 
-1、阅读代码，理解 proc_run 函数和它调用的函数如何完成进程切换的
+1、请分析fork/exec/wait/exit在实现中是如何影响进程的执行状态的？
 
-分析如下：
+fork：创建一个新的进程，父进程复制自己的内存空间给子进程，并将子进程状态设为RUNNABLE。
+
+exec：将新的程序复制到内核空间并执行（即进入RUNNING态），如果加载失败则调用do_exit退出。
+
+wait：回收进入僵尸状态的或已终止的子进程的资源，若子进程正在运行，则通过schedule进入SLEEPING状态，SLEEPING时间结束或被唤醒后次再尝试回收。
+
+exit：回收自身进程的大部分资源并进入僵尸状态，然后查看父进程，如果在SLEEPING状态则唤醒。遍历自己的子进程，将其父进程设置为initproc，如果子进程为僵尸状态且initproc为SLEEPING状态则唤醒initproc。 
+
+
+2、请给出ucore中一个用户态进程的执行状态生命周期图（包执行状态，执行状态之间的变换关系，以及产生变换的事件或函数调用）。（字符方式画即可）
 
 ```
-if (proc != current) {
-    bool intr_flag;
-    struct proc_struct *prev = current, *next = proc;
-    local_intr_save(intr_flag);                        //关闭中断
-    {
-        current = proc;                                //设置proc为当前线程
-        load_esp0(next->kstack + KSTACKSIZE);          //载入新的esp，完成栈切换
-        lcr3(next->cr3);                               //载入新的CR3，完成页表基址切换
-        switch_to(&(prev->context), &(next->context)); //完成上下文切换
-    }
-    local_intr_restore(intr_flag);                     //打开中断
-}
+        fork                wait
+UNINIT-------->RUNNABLE------------->SLEEPING
+                |      <-------------
+        exit    |          wake_up
+                |
+                v
+              ZOMBIE
 ```
-
-2、在本实验的执行过程中，创建且运行了几个内核线程？。
-
-两个，分别是idleproc和init_main。
-
-3、语句local_intr_save(intr_flag);....local_intr_restore(intr_flag);在这里有何作用?请说明理由
-
-分别是起到关闭中断和打开中断的作用，能够保护这两条命令中间的语句正常执行不被打断，确保栈、页表基址、上下文切换正确无误，不出异常。
 
 ---
 ### Others
@@ -60,15 +54,15 @@ if (proc != current) {
 
 1、与标准答案的区别
 
-本次实验的两个代码任务的实质分别是初始化一个结构和按注释提示为线程分配资源，我的代码与标准答案最大的不同是在练习2的代码中没有使用local_intr_save(intr_flag);....local_intr_restore(intr_flag)（开中断和关中断），虽然在本次实验中没有影响，但显然不使用开关中断命令是不安全的，语句执行有被打断的可能。
+在练习2复制内存空间时没有通过void*来复制空间而是直接用的uint32，此外在修改lab1和lab4的部分代码时具体实现有一些区别。
 
 2、涉及的重要知识点
 
-线程、进程、状态切换、资源分配、fork等。
+进程状态变迁、fork、进程的选择与加载。
 
 3、未在实验中体现的知识点
 
-挂起。
+挂起及相关的变迁与处理。
 
 
 
