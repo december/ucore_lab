@@ -1,52 +1,37 @@
 ### 练习一
 ---
 
-1、加载应用程序并执行
+1、请理解并分析sched_calss中各个函数指针的用法，并接合Round Robin 调度算法描ucore的调度执行过程
 
-按照实验中的提示设置tf的成员变量，其中cs为用户代码段设为USER_CS，ds、es、ss为用户数据段设为USER_DS，esp为栈顶，eip为程序入口，eflags为中断使能标志。
+sched_calss中包含以下函数指针：
 
-2、描述当创建一个用户态进程并加载了应用程序后，CPU是如何让这个应用程序最终在用户态执行起来的。即这个用户态进程被ucore选择占用CPU执行（RUNNING态）到具体执行应用程序第一条指令的整个经过。
+void (*init)(struct run_queue *rq)：初始化调度队列
 
-当一个用户态进程进入RUNNING态后，首先加载新线程的段和CR3，然后调用switch_to函数，保存上下文，将存储相应信息设置为用户态的tf作为参数调用fortret函数，将栈空间切换到新线程的内核栈，加载存储在寄存器中的参数。当所有中断和系统调用返回后，开始执行第一条指令。
+void (*enqueue)(struct run_queue *rq, struct proc_struct *proc)：把进程放到队列中
+
+void (*dequeue)(struct run_queue *rq, struct proc_struct *proc)：把进程从队列中取出
+
+struct proc_struct *(*pick_next)(struct run_queue *rq)：从队列中选择下一个运行的进程
+
+void (*proc_tick)(struct run_queue *rq, struct proc_struct *proc)：处理时钟中断
+
+调度时首先进行初始化，将进程数置0，如果进程是RUNNABLE的，将其加入runlist中，设置进程的rq为当前运行队列，并更新进程数和时间片。然后挑选一个合适的进程运行，将其从队列中pop出去，并更新进程数。具体到Round Robin算法，维护一个进程队列，每次挑选队首进程运行，当进程时间片用完时，调用schedule将其放到队尾。
+
+2、请在实验报告中简要说明如何设计实现”多级反馈队列调度算法“，给出概要设计，鼓励给出详细设计
+
+维护N个运行队列，分别对应n个优先级，并进行初始化。当进程进入待调度的队列等待时，首先挑选优先级最高的队列。选取的进执行过一个时间片后，如果还没有执行完毕，则将其加入到下一优先级队列的尾部。即enqueue时记录优先级n，dequeue时将其加入优先级为(n+1)的队列中，选取时按优先级顺序这样在每个队列中顺序选取。
 
 ---
 ### 练习二
 ---
 
-1、父进程复制自己的内存空间给子进程
+1、实现 Stride Scheduling 调度算法
 
-按照注释中的提示，首先利用KADDR找到src、dst地址所对应内容，再利用memset完成复制，最后用page_insert来修改页表的对应映射关系，即可复制父进程的内存空间到子进程。
+按照注释中的提示，首先需要修改proc.c中的初始化内容，增加对rq、priority、stride等变量的初始化；然后还需要修改trap中时钟中断的相关代码，之前的写法tick每到100会清零，而priority的线程只有tick到1000时才会退出，会导致死循环。此外，还需要设置BIG_STRIDE的值，为了支持尽可能多的优先级选取了0x7FFFFFFF。
 
-2、简要说明如何设计实现”Copy on Write 机制“，给出概要设计，鼓励给出详细设计。
+然后需要初始化，我直接用list_init(&(rq->run_list))进行初始化。入队函数采用斜堆结构，用skew_heap_insert实现，并更新时间片、进程数、rq等信息。出队函数同样使用斜堆，通过skew_heap_remove实现。选取下个进程函数当队列非空时，由于采用了斜堆，直接返回rq->lab6_run_pool对应的第一个进程即可。时钟中断处理函数只需将time_slice减1，减至0时将need_resched置1即可。
 
-COW机制要求在生成新进程时，新进程与原进程会共享同一内存区；只有当其中一进程进行写操作时，系统才会为其另外分配内存页面并完成其余不变部分的复制。在ucore中，复制mm_struct的工作在dup_mmap中完成。若要实现COW机制，需修改dup_mmap，将复制mm_struct改为直接传vma的指针，相当于使两个mm_struct共享原来的内存空间，并将该vma设为只读。 当出现page_fault的时候，如果发现错误原因是在尝试写一个只读页，则说明这里有共用这块空间的进程尝试进行了写操作，这时再新建vma并复制原来的mm_struct，并将原来vma的只读取消，即实现了COW机制。
-
----
-### 练习三
----
-
-1、请分析fork/exec/wait/exit在实现中是如何影响进程的执行状态的？
-
-fork：创建一个新的进程，父进程复制自己的内存空间给子进程，并将子进程状态设为RUNNABLE。
-
-exec：将新的程序复制到内核空间并执行（即进入RUNNING态），如果加载失败则调用do_exit退出。
-
-wait：回收进入僵尸状态的或已终止的子进程的资源，若子进程正在运行，则通过schedule进入SLEEPING状态，SLEEPING时间结束或被唤醒后次再尝试回收。
-
-exit：回收自身进程的大部分资源并进入僵尸状态，然后查看父进程，如果在SLEEPING状态则唤醒。遍历自己的子进程，将其父进程设置为initproc，如果子进程为僵尸状态且initproc为SLEEPING状态则唤醒initproc。 
-
-
-2、请给出ucore中一个用户态进程的执行状态生命周期图（包执行状态，执行状态之间的变换关系，以及产生变换的事件或函数调用）。（字符方式画即可）
-
-```
-        fork                wait
-UNINIT-------->RUNNABLE------------->SLEEPING
-                |      <-------------
-        exit    |          wake_up
-                |
-                v
-              ZOMBIE
-```
+在评测过程中发现，由于时间片长度太短切换太快，forktree和priority的评测结果不稳定，有时会出错。
 
 ---
 ### Others
@@ -54,15 +39,15 @@ UNINIT-------->RUNNABLE------------->SLEEPING
 
 1、与标准答案的区别
 
-在练习2复制内存空间时没有通过void*来复制空间而是直接用的uint32，此外在修改lab1和lab4的部分代码时具体实现有一些区别。
+在proc.c中初始化priority时，答案中初始化为0，而我初始化为1；相应地在pick_next中我也没有像答案中一样判断priority是否为0，而是直接除以priority。其余部分由于均为按注释提示实现，与答案中的斜堆部分大同小异。
 
 2、涉及的重要知识点
 
-进程状态变迁、fork、进程的选择与加载。
+进程调度、进程队列维护、调度算法等。
 
 3、未在实验中体现的知识点
 
-挂起及相关的变迁与处理。
+除Round Robin外的其它调度算法。
 
 
 
